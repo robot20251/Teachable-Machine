@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>실시간 자세 교정 모니터</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: #e0e0e0;
+            height: 100vh;
+            box-sizing: border-box;
+            transition: background-color 0.25s ease;
+        }
+        button { 
+            padding: 12px 30px; 
+            font-size: 18px; 
+            font-weight: bold; 
+            background-color: #222; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            margin-bottom: 25px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        button:hover { 
+            background-color: #444; 
+        }
+        #webcam-container { 
+            border: 6px solid #fff; 
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2); 
+            border-radius: 15px; 
+            overflow: hidden; 
+            background-color: #000; 
+            width: 240px; 
+            height: 240px; 
+            margin-bottom: 25px; 
+        }
+        #label-container { 
+            width: 260px; 
+            background: rgba(255, 255, 255, 0.9); 
+            padding: 15px 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            font-size: 20px; 
+            font-weight: bold; 
+            line-height: 1.8;
+            text-align: left;
+            color: #222;
+        }
+    </style>
+</head>
+<body>
+
+    <button type="button" onclick="init()">시작하기 (Start)</button>
+    <div id="webcam-container"></div>
+    <div id="label-container">시작 버튼을 눌러주세요.</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    
+    <script type="text/javascript">
+        const URL = "https://teachablemachine.withgoogle.com/models/l890fbL5O/";
+        let model, webcam, labelContainer, maxPredictions;
+        
+        let countGood = 0;
+        let countBad = 0; 
+        
+        const LIMIT_GOOD = 20;   
+        const LIMIT_BAD = 20;   
+        const MIN_PROB = 0.6;
+
+        async function init() {
+            try {
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                const flip = true;
+                webcam = new tmImage.Webcam(240, 240, flip); 
+                
+                await webcam.setup({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        resizeMode: "none"
+                    }
+                }); 
+                
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                labelContainer = document.getElementById("label-container");
+                labelContainer.innerHTML = ""; 
+                for (let i = 0; i < maxPredictions; i++) { 
+                    labelContainer.appendChild(document.createElement("div"));
+                }
+            } catch (error) {
+                alert("카메라를 켤 수 없거나 모델 주소 에러입니다.");
+                console.error(error);
+            }
+        }
+
+        async function loop() {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+            
+            let targetIndex = 0;
+            let maxProb = 0;
+            
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction = prediction[i].className + ": " + (prediction[i].probability * 100).toFixed(0) + "%";
+                labelContainer.childNodes[i].innerHTML = classPrediction;
+
+                if (prediction[i].probability > maxProb) {
+                    maxProb = prediction[i].probability;
+                    targetIndex = i;
+                }
+            }
+
+            if (maxProb > MIN_PROB) {
+                if (targetIndex === 0) {
+                    countGood++;
+                    countBad = 0;
+                    
+                    if (countGood >= LIMIT_GOOD) {
+                        document.body.style.backgroundColor = "#2196F3";
+                        countGood = LIMIT_GOOD;
+                    }
+                } 
+                else if (targetIndex === 1) {
+                    countBad++;
+                    countGood = 0;
+                    
+                    if (countBad >= LIMIT_BAD) {
+                        document.body.style.backgroundColor = "#F44336";
+                        countBad = LIMIT_BAD;
+                    }
+                } 
+                else {
+                    countGood = 0;
+                    countBad = 0;
+                    
+                    if (maxProb > 0.80) {
+                        document.body.style.backgroundColor = "#e0e0e0";
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
